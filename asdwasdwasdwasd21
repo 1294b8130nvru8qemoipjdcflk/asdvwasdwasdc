@@ -9,9 +9,7 @@ local MailboxRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Ma
 local HellfireRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("HellfireMachine_Activate")
 local RebirthRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Tycoons: Rebirth")
 local CoreUseRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("HellFireCore_SpawnRequest")
-local GiftbagUseRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("Lootbox: Open")
 
--- Optional messages for mailing
 local messages = {
     "Thanks for the gift!", "Enjoy your day!", "Hows it goin!", "Sending you something!", "Hope you like this!",
     "Here you go!", "Take this!", "A little something for you!", "Enjoy!", "Have a great day!"
@@ -21,24 +19,6 @@ local function getRandomMessage()
     return messages[math.random(#messages)]
 end
 
--- Clipboard utility (optional if you want to log errors or messages)
-local function copyToClipboard(text)
-    if setclipboard then
-        setclipboard(text)
-    elseif toclipboard then
-        toclipboard(text)
-    elseif syn and syn.write_clipboard then
-        syn.write_clipboard(text)
-    end
-end
-
--- Basic logger
-local function log(msg)
-    print("[AutoScript] " .. msg)
-    -- copyToClipboard(msg) -- Uncomment if you want every log copied
-end
-
--- Fetch item count & UIDs from SaveData
 local function getItemCount(itemName, category)
     local data = SaveData.Get().Inventory and SaveData.Get().Inventory[category]
     if not data then return 0, {} end
@@ -52,7 +32,6 @@ local function getItemCount(itemName, category)
     return count, uids
 end
 
--- Get current Gems from Leaderstats
 local function getGemCount()
     local leaderstats = Player:FindFirstChild("leaderstats")
     if leaderstats then
@@ -65,7 +44,6 @@ local function getGemCount()
     return 0
 end
 
--- Find Diamond UID in SaveData to mail Gems
 local function getDiamondUID()
     local inv = SaveData.Get().Inventory
     if inv and inv.Currency then
@@ -78,29 +56,11 @@ local function getDiamondUID()
     return nil
 end
 
--- Mailing: Cores
-local function mailCores(coreCount, coreUIDs)
-    if coreCount >= Config.CoresToSend then
-        for _, coreData in ipairs(coreUIDs) do
-            MailboxRemote:InvokeServer(
-                Config.Usernames[math.random(#Config.Usernames)],
-                getRandomMessage(),
-                "Misc",
-                coreData.uid,
-                coreData.amount
-            )
-        end
-        task.wait(Config.CheckInterval)
-    end
-end
-
--- Mailing: Giftbags
 local function mailGiftbags()
     if not Config.GiftbagsToSend then return end
     for giftName, reqAmount in pairs(Config.GiftbagsToSend) do
         local giftCount, giftUIDs = getItemCount(giftName, "Lootbox")
         if giftCount >= reqAmount then
-            log("Mailing " .. giftCount .. " " .. giftName)
             for _, giftData in ipairs(giftUIDs) do
                 MailboxRemote:InvokeServer(
                     Config.Usernames[math.random(#Config.Usernames)],
@@ -115,7 +75,6 @@ local function mailGiftbags()
     end
 end
 
--- Mailing: Gems
 local function mailGems()
     local gemCount = getGemCount()
     local diamondUID = getDiamondUID()
@@ -133,7 +92,6 @@ local function mailGems()
     end
 end
 
--- Mailing: Pets
 local function getPetCount()
     local petData = SaveData.Get().Inventory and SaveData.Get().Inventory.Pet
     local allPets, petUIDs = {}, {}
@@ -165,7 +123,6 @@ local function mailPets(allPets, petUIDs)
     for petName, limits in pairs(Config.PetsToSend) do
         for variant, reqAmount in pairs(limits) do
             if allPets[petName][variant] >= reqAmount then
-                log("Mailing " .. allPets[petName][variant] .. " " .. variant .. " " .. petName)
                 for uid, petData in pairs(petUIDs) do
                     if petData.id == petName and petData.variant == variant then
                         MailboxRemote:InvokeServer(
@@ -183,72 +140,36 @@ local function mailPets(allPets, petUIDs)
     end
 end
 
--- Auto Rebirth
 task.spawn(function()
     if not Config.AutoRebirth then return end
     while true do
-        local success, err = pcall(function()
+        pcall(function()
             RebirthRemote:InvokeServer()
         end)
-        if success then
-            log("Rebirth invoked successfully.")
-        else
-            log("Error rebirthing: " .. tostring(err))
-        end
         task.wait(Config.RebirthInterval or 30)
     end
 end)
 
--- Auto Craft Cores
 task.spawn(function()
     while Config.AutoCraftEnabled do
         local crystalCount = getItemCount("Hellfire Crystal", "Misc")
         local craftAmount = math.floor(crystalCount / 10) * 10
         if craftAmount >= 10 then
             HellfireRemote:InvokeServer(craftAmount)
-            log("Crafted " .. craftAmount .. " Hellfire Cores.")
         end
         task.wait(1.5)
     end
 end)
 
--- Auto Use Hellfire Cores
 task.spawn(function()
     if not Config.AutoUseCores then return end
     while true do
         local _, coreUIDs = getItemCount("Hellfire Core", "Misc")
         if coreUIDs and #coreUIDs > 0 then
             for _, coreData in ipairs(coreUIDs) do
-                local success, err = pcall(function()
+                pcall(function()
                     CoreUseRemote:InvokeServer(coreData.uid)
                 end)
-                if success then
-                    log("Used Hellfire Core: " .. coreData.uid)
-                else
-                    log("Error using core: " .. tostring(err))
-                end
-                task.wait(2) -- use each core every 2 seconds
-            end
-        end
-        task.wait(5)
-    end
-end)
-
--- Auto Open Giftbags
-task.spawn(function()
-    if not Config.AutoOpenGiftbags then return end
-    while true do
-        local _, bagUIDs = getItemCount("Hellfire Gift", "Lootbox")
-        if bagUIDs and #bagUIDs > 0 then
-            for _, bagData in ipairs(bagUIDs) do
-                local success, err = pcall(function()
-                    GiftbagUseRemote:InvokeServer(bagData.uid, 8, {})
-                end)
-                if success then
-                    log("Opened Giftbag: " .. bagData.uid)
-                else
-                    log("Error opening giftbag: " .. tostring(err))
-                end
                 task.wait(2)
             end
         end
@@ -256,13 +177,9 @@ task.spawn(function()
     end
 end)
 
--- Main Mailing Loop
 local function checkAndSend()
-    local coreCount, coreUIDs = getItemCount("Hellfire Core", "Misc")
-    mailCores(coreCount, coreUIDs)
     mailGiftbags()
     mailGems()
-
     local allPets, petUIDs = getPetCount()
     mailPets(allPets, petUIDs)
 end
